@@ -26,7 +26,9 @@ type Message = {
 export default function ShashaApp() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
+  const [conversationStarted, setConversationStarted] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -34,34 +36,37 @@ export default function ShashaApp() {
 
   const { toast } = useToast();
 
-  useEffect(() => {
-    async function getCameraStream() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-        });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-        setHasCameraPermission(true);
-      } catch (err) {
-        console.error("Error accessing camera:", err);
-        setHasCameraPermission(false);
-        toast({
-          variant: "destructive",
-          title: "Camera Error",
-          description: "Could not access the camera. Please check permissions and try again.",
-        });
+  const handleStartConversation = async () => {
+    setIsStarting(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
       }
+      setHasCameraPermission(true);
+      setConversationStarted(true);
+    } catch (err) {
+      console.error("Error accessing camera:", err);
+      setHasCameraPermission(false);
+      toast({
+        variant: "destructive",
+        title: "Camera Error",
+        description: "Could not access the camera. Please check permissions and try again.",
+      });
+    } finally {
+      setIsStarting(false);
     }
-    getCameraStream();
+  };
 
+  useEffect(() => {
     return () => {
       if (videoRef.current && videoRef.current.srcObject) {
         (videoRef.current.srcObject as MediaStream).getTracks().forEach((track) => track.stop());
       }
     };
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -157,109 +162,124 @@ export default function ShashaApp() {
             <CardDescription>Your AI Homework Helper</CardDescription>
           </div>
         </div>
-        <Button variant="outline" onClick={clearChat}>Clear Chat</Button>
+        <Button variant="outline" onClick={clearChat} disabled={isProcessing}>Clear Chat</Button>
       </CardHeader>
       <CardContent className="flex-grow flex flex-col lg:flex-row p-0 overflow-hidden">
-        <div className="lg:w-1/2 lg:border-r bg-black relative flex items-center justify-center">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full h-full object-cover"
-          />
-          <canvas ref={canvasRef} className="hidden" />
-          {hasCameraPermission === false && (
-             <div className="absolute inset-0 bg-black/70 flex items-center justify-center p-4">
-              <Alert variant="destructive" className="max-w-sm">
-                <VideoOff className="h-4 w-4" />
-                <AlertTitle>Camera Access Denied</AlertTitle>
-                <AlertDescription>
-                  Please grant camera access in your browser settings to use Shasha. You may need to reload the page.
-                </AlertDescription>
-              </Alert>
-            </div>
-          )}
-           {hasCameraPermission === null && (
-             <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
-              <LoaderCircle className="h-8 w-8 animate-spin text-primary-foreground" />
-             </div>
-           )}
-        </div>
-        <div className="flex flex-col h-full lg:w-1/2">
-            <ScrollArea className="flex-grow p-4" ref={scrollAreaRef}>
-              <div className="space-y-6">
-                 {messages.length === 0 && (
-                    <div className="flex items-center justify-center h-full text-center p-8">
-                       <p className="text-muted-foreground">
-                         Point your camera at a problem and ask a question below to get started.
-                       </p>
-                    </div>
-                 )}
-                {messages.map((message, index) => (
-                  <div
-                    key={index}
-                    className={`flex items-start gap-3 ${
-                      message.role === "user" ? "justify-end" : ""
-                    }`}
-                  >
-                    {message.role === "ai" && (
-                      <Avatar>
-                        <AvatarFallback>
-                          <Sparkles />
-                        </AvatarFallback>
-                      </Avatar>
-                    )}
-                    <div
-                      className={`max-w-md rounded-lg p-3 ${
-                        message.role === "user"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-secondary"
-                      }`}
-                    >
-                      <p className="whitespace-pre-wrap text-sm">{message.text}</p>
-                    </div>
-                     {message.role === "user" && (
-                      <Avatar>
-                        <AvatarFallback>U</AvatarFallback>
-                      </Avatar>
-                    )}
-                  </div>
-                ))}
-                {isProcessing && (
-                  <div className="flex items-start gap-3">
-                    <Avatar>
-                      <AvatarFallback>
-                        <Sparkles />
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="max-w-md rounded-lg p-3 bg-secondary">
-                        <LoaderCircle className="animate-spin h-5 w-5" />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </ScrollArea>
-            <div className="p-4 border-t bg-card">
-              <form onSubmit={handleSubmit} className="flex items-center gap-2">
-                <Textarea
-                  name="question"
-                  placeholder="Ask a question..."
-                  className="flex-grow resize-none"
-                  rows={1}
-                  disabled={isProcessing || !hasCameraPermission}
-                />
-                <Button type="submit" size="icon" disabled={isProcessing || !hasCameraPermission}>
-                  {isProcessing ? (
-                    <LoaderCircle className="animate-spin" />
-                  ) : (
-                    <Send />
-                  )}
-                  <span className="sr-only">Send</span>
-                </Button>
-              </form>
-            </div>
+        {!conversationStarted ? (
+          <div className="flex-grow flex items-center justify-center w-full">
+            <Button onClick={handleStartConversation} size="lg" disabled={isStarting}>
+              {isStarting ? (
+                <LoaderCircle className="animate-spin" />
+              ) : (
+                <Video />
+              )}
+              Start Conversation
+            </Button>
           </div>
+        ) : (
+          <>
+            <div className="lg:w-1/2 lg:border-r bg-black relative flex items-center justify-center">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+              <canvas ref={canvasRef} className="hidden" />
+              {hasCameraPermission === false && (
+                 <div className="absolute inset-0 bg-black/70 flex items-center justify-center p-4">
+                  <Alert variant="destructive" className="max-w-sm">
+                    <VideoOff className="h-4 w-4" />
+                    <AlertTitle>Camera Access Denied</AlertTitle>
+                    <AlertDescription>
+                      Please grant camera access in your browser settings to use Shasha. You may need to reload the page.
+                    </AlertDescription>
+                  </Alert>
+                </div>
+              )}
+               {hasCameraPermission === null && (
+                 <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+                  <LoaderCircle className="h-8 w-8 animate-spin text-primary-foreground" />
+                 </div>
+               )}
+            </div>
+            <div className="flex flex-col h-full lg:w-1/2">
+                <ScrollArea className="flex-grow p-4" ref={scrollAreaRef}>
+                  <div className="space-y-6">
+                     {messages.length === 0 && (
+                        <div className="flex items-center justify-center h-full text-center p-8">
+                           <p className="text-muted-foreground">
+                             Point your camera at a problem and ask a question below to get started.
+                           </p>
+                        </div>
+                     )}
+                    {messages.map((message, index) => (
+                      <div
+                        key={index}
+                        className={`flex items-start gap-3 ${
+                          message.role === "user" ? "justify-end" : ""
+                        }`}
+                      >
+                        {message.role === "ai" && (
+                          <Avatar>
+                            <AvatarFallback>
+                              <Sparkles />
+                            </AvatarFallback>
+                          </Avatar>
+                        )}
+                        <div
+                          className={`max-w-md rounded-lg p-3 ${
+                            message.role === "user"
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-secondary"
+                          }`}
+                        >
+                          <p className="whitespace-pre-wrap text-sm">{message.text}</p>
+                        </div>
+                         {message.role === "user" && (
+                          <Avatar>
+                            <AvatarFallback>U</AvatarFallback>
+                          </Avatar>
+                        )}
+                      </div>
+                    ))}
+                    {isProcessing && messages.length > 0 && (
+                      <div className="flex items-start gap-3">
+                        <Avatar>
+                          <AvatarFallback>
+                            <Sparkles />
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="max-w-md rounded-lg p-3 bg-secondary">
+                            <LoaderCircle className="animate-spin h-5 w-5" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+                <div className="p-4 border-t bg-card">
+                  <form onSubmit={handleSubmit} className="flex items-center gap-2">
+                    <Textarea
+                      name="question"
+                      placeholder="Ask a question..."
+                      className="flex-grow resize-none"
+                      rows={1}
+                      disabled={isProcessing || !hasCameraPermission}
+                    />
+                    <Button type="submit" size="icon" disabled={isProcessing || !hasCameraPermission}>
+                      {isProcessing ? (
+                        <LoaderCircle className="animate-spin" />
+                      ) : (
+                        <Send />
+                      )}
+                      <span className="sr-only">Send</span>
+                    </Button>
+                  </form>
+                </div>
+              </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );
