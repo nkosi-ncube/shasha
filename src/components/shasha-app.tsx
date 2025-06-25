@@ -1,75 +1,66 @@
 "use client";
 
 import { useState, useRef, useEffect, FormEvent } from "react";
-import Image from "next/image";
 import {
-  Camera,
   Send,
   LoaderCircle,
-  AlertTriangle,
   Sparkles,
-  Volume2,
+  Video,
+  VideoOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { getExplanation } from "@/app/actions";
+import { getRealTimeHelp } from "@/app/actions";
 import { useToast } from "@/hooks/use-toast";
-import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import { Avatar, AvatarFallback } from "./ui/avatar";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
 type Message = {
   role: "user" | "ai";
   text: string;
-  audio?: string;
 };
 
 export default function ShashaApp() {
-  const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   const { toast } = useToast();
 
   useEffect(() => {
     async function getCameraStream() {
-      if (!capturedImage) {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: "environment" },
-          });
-          setStream(stream);
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-          }
-        } catch (err) {
-          console.error("Error accessing camera:", err);
-          toast({
-            variant: "destructive",
-            title: "Camera Error",
-            description: "Could not access the camera. Please check permissions and try again.",
-          });
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+        });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
         }
+        setHasCameraPermission(true);
+      } catch (err) {
+        console.error("Error accessing camera:", err);
+        setHasCameraPermission(false);
+        toast({
+          variant: "destructive",
+          title: "Camera Error",
+          description: "Could not access the camera. Please check permissions and try again.",
+        });
       }
     }
     getCameraStream();
 
     return () => {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-      }
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
+      if (videoRef.current && videoRef.current.srcObject) {
+        (videoRef.current.srcObject as MediaStream).getTracks().forEach((track) => track.stop());
       }
     };
-  }, [capturedImage, toast]);
+  }, [toast]);
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -80,8 +71,8 @@ export default function ShashaApp() {
     }
   }, [messages]);
 
-  const handleCapture = () => {
-    if (videoRef.current && canvasRef.current) {
+  const captureCurrentFrame = (): string | null => {
+    if (videoRef.current && canvasRef.current && hasCameraPermission) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       canvas.width = video.videoWidth;
@@ -89,14 +80,10 @@ export default function ShashaApp() {
       const context = canvas.getContext("2d");
       if (context) {
         context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-        const dataUri = canvas.toDataURL("image/jpeg");
-        setCapturedImage(dataUri);
-        setMessages([
-          { role: "ai", text: "Great! I've got the problem. What's your question?" },
-        ]);
-        stream?.getTracks().forEach((track) => track.stop());
+        return canvas.toDataURL("image/jpeg");
       }
     }
+    return null;
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -104,14 +91,24 @@ export default function ShashaApp() {
     const formData = new FormData(event.currentTarget);
     const question = formData.get("question") as string;
 
-    if (!question.trim() || !capturedImage) return;
+    if (!question.trim()) return;
+
+    const frameDataUri = captureCurrentFrame();
+    if (!frameDataUri) {
+      toast({
+        variant: "destructive",
+        title: "Camera Error",
+        description: "Could not capture frame. Please ensure camera is working.",
+      });
+      return;
+    }
 
     setMessages((prev) => [...prev, { role: "user", text: question }]);
     setIsProcessing(true);
 
-    const response = await getExplanation({
-      problemImage: capturedImage,
-      studentQuestion: question,
+    const response = await getRealTimeHelp({
+      photoDataUri: frameDataUri,
+      query: question,
     });
     
     if ("error" in response) {
@@ -120,14 +117,13 @@ export default function ShashaApp() {
         title: "AI Error",
         description: response.error,
       });
-      setMessages((prev) => prev.slice(0, -1)); // Remove user message if AI fails
+      setMessages((prev) => prev.slice(0, -1));
     } else {
       setMessages((prev) => [
         ...prev,
         {
           role: "ai",
-          text: response.textExplanation,
-          audio: response.audioExplanation,
+          text: response.response,
         },
       ]);
     }
@@ -135,28 +131,14 @@ export default function ShashaApp() {
     setIsProcessing(false);
     (event.target as HTMLFormElement).reset();
   };
-
-  const handlePlayAudio = (audioDataUri: string) => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
-    audioRef.current = new Audio(audioDataUri);
-    audioRef.current.play().catch(e => console.error("Error playing audio:", e));
-  };
   
-  const resetApp = () => {
-    setCapturedImage(null);
+  const clearChat = () => {
     setMessages([]);
-    setIsProcessing(false);
-    if(stream) {
-      stream.getTracks().forEach(track => track.stop());
-    }
-    setStream(null);
   }
 
   return (
-    <Card className="w-full max-w-2xl mx-auto shadow-2xl overflow-hidden h-[90vh] flex flex-col">
-      <CardHeader className="flex flex-row items-center justify-between">
+    <Card className="w-full max-w-4xl mx-auto shadow-2xl overflow-hidden h-[95vh] flex flex-col">
+      <CardHeader className="flex flex-row items-center justify-between border-b">
         <div className="flex items-center gap-3">
           <Sparkles className="text-primary w-8 h-8" />
           <div>
@@ -164,45 +146,45 @@ export default function ShashaApp() {
             <CardDescription>Your AI Homework Helper</CardDescription>
           </div>
         </div>
-        {capturedImage && (
-          <Button variant="outline" onClick={resetApp}>New Problem</Button>
-        )}
+        <Button variant="outline" onClick={clearChat}>Clear Chat</Button>
       </CardHeader>
-      <CardContent className="flex-grow flex flex-col p-0 overflow-hidden">
-        {!capturedImage ? (
-          <div className="relative w-full h-full bg-black flex flex-col items-center justify-center">
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              className="w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 bg-black/30" />
-            <div className="absolute bottom-6">
-              <Button
-                size="lg"
-                className="rounded-full h-20 w-20 bg-primary/80 hover:bg-primary border-4 border-primary-foreground/50 backdrop-blur-sm"
-                onClick={handleCapture}
-                aria-label="Capture problem"
-              >
-                <Camera className="h-10 w-10" />
-              </Button>
+      <CardContent className="flex-grow flex flex-col lg:flex-row p-0 overflow-hidden">
+        <div className="lg:w-1/2 lg:border-r bg-black relative flex items-center justify-center">
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover"
+          />
+          <canvas ref={canvasRef} className="hidden" />
+          {hasCameraPermission === false && (
+             <div className="absolute inset-0 bg-black/70 flex items-center justify-center p-4">
+              <Alert variant="destructive" className="max-w-sm">
+                <VideoOff className="h-4 w-4" />
+                <AlertTitle>Camera Access Denied</AlertTitle>
+                <AlertDescription>
+                  Please grant camera access in your browser settings to use Shasha. You may need to reload the page.
+                </AlertDescription>
+              </Alert>
             </div>
-            <canvas ref={canvasRef} className="hidden" />
-          </div>
-        ) : (
-          <div className="flex flex-col h-full">
-            <div className="p-4 border-b">
-              <Image
-                src={capturedImage}
-                alt="Captured homework problem"
-                width={200}
-                height={150}
-                className="rounded-lg object-contain mx-auto max-h-[150px]"
-              />
-            </div>
+          )}
+           {hasCameraPermission === null && (
+             <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+              <LoaderCircle className="h-8 w-8 animate-spin text-primary-foreground" />
+             </div>
+           )}
+        </div>
+        <div className="flex flex-col h-full lg:w-1/2">
             <ScrollArea className="flex-grow p-4" ref={scrollAreaRef}>
               <div className="space-y-6">
+                 {messages.length === 0 && (
+                    <div className="flex items-center justify-center h-full text-center p-8">
+                       <p className="text-muted-foreground">
+                         Point your camera at a problem and ask a question below to get started.
+                       </p>
+                    </div>
+                 )}
                 {messages.map((message, index) => (
                   <div
                     key={index}
@@ -225,17 +207,6 @@ export default function ShashaApp() {
                       }`}
                     >
                       <p className="whitespace-pre-wrap text-sm">{message.text}</p>
-                      {message.audio && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="mt-2 -ml-2"
-                          onClick={() => handlePlayAudio(message.audio!)}
-                        >
-                          <Volume2 className="h-4 w-4 mr-2" />
-                          Play Explanation
-                        </Button>
-                      )}
                     </div>
                      {message.role === "user" && (
                       <Avatar>
@@ -262,12 +233,12 @@ export default function ShashaApp() {
               <form onSubmit={handleSubmit} className="flex items-center gap-2">
                 <Textarea
                   name="question"
-                  placeholder="Ask a question about the problem..."
+                  placeholder="Ask a question..."
                   className="flex-grow resize-none"
                   rows={1}
-                  disabled={isProcessing}
+                  disabled={isProcessing || !hasCameraPermission}
                 />
-                <Button type="submit" size="icon" disabled={isProcessing}>
+                <Button type="submit" size="icon" disabled={isProcessing || !hasCameraPermission}>
                   {isProcessing ? (
                     <LoaderCircle className="animate-spin" />
                   ) : (
@@ -278,7 +249,6 @@ export default function ShashaApp() {
               </form>
             </div>
           </div>
-        )}
       </CardContent>
     </Card>
   );

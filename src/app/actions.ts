@@ -1,32 +1,34 @@
 "use server";
 
-import { conversationalExplanations } from "@/ai/flows/conversational-explanations";
+import { realTimeHomeworkHelp } from "@/ai/flows/real-time-homework-help";
 import { z } from "zod";
 
-const explanationSchema = z.object({
-  problemImage: z.string(),
-  studentQuestion: z.string(),
+const helpSchema = z.object({
+  photoDataUri: z.string(),
+  query: z.string(),
 });
 
-type ExplanationResponse = {
-  textExplanation: string;
-  audioExplanation: string;
+type HelpResponse = {
+  response: string;
 } | { error: string };
 
-export async function getExplanation(
-  data: z.infer<typeof explanationSchema>
-): Promise<ExplanationResponse> {
-  const validatedData = explanationSchema.safeParse(data);
+export async function getRealTimeHelp(
+  data: z.infer<typeof helpSchema>
+): Promise<HelpResponse> {
+  const validatedData = helpSchema.safeParse(data);
 
   if (!validatedData.success) {
     return { error: "Invalid input." };
   }
 
   try {
-    const result = await conversationalExplanations(validatedData.data);
+    const result = await realTimeHomeworkHelp({
+        photoDataUri: validatedData.data.photoDataUri,
+        query: validatedData.data.query,
+    });
     return result;
   } catch (e) {
     console.error(e);
-    return { error: "An error occurred while getting the explanation." };
+    return { error: "An error occurred while getting help." };
   }
 }
