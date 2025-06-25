@@ -59,6 +59,16 @@ export default function ShashaApp() {
     }
   };
 
+  const handleStopConversation = () => {
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+    }
+    setStream(null);
+    setConversationStarted(false);
+    setHasCameraPermission(null);
+    setMessages([]);
+  };
+
   useEffect(() => {
     if (stream && videoRef.current) {
       videoRef.current.srcObject = stream;
@@ -164,7 +174,17 @@ export default function ShashaApp() {
             <CardDescription>Your AI Homework Helper</CardDescription>
           </div>
         </div>
-        <Button variant="outline" onClick={clearChat} disabled={isProcessing}>Clear Chat</Button>
+        <div className="flex items-center gap-2">
+          {conversationStarted && (
+            <Button variant="destructive" onClick={handleStopConversation} disabled={isProcessing}>
+              <VideoOff className="mr-2 h-4 w-4" />
+              Stop
+            </Button>
+          )}
+          <Button variant="outline" onClick={clearChat} disabled={isProcessing || messages.length === 0}>
+            Clear Chat
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="flex-grow flex flex-col lg:flex-row p-0 overflow-hidden">
         {!conversationStarted ? (
