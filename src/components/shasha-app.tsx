@@ -29,6 +29,7 @@ export default function ShashaApp() {
   const [isStarting, setIsStarting] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const [conversationStarted, setConversationStarted] = useState(false);
+  const [stream, setStream] = useState<MediaStream | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -39,12 +40,10 @@ export default function ShashaApp() {
   const handleStartConversation = async () => {
     setIsStarting(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const cameraStream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
       });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      setStream(cameraStream);
       setHasCameraPermission(true);
       setConversationStarted(true);
     } catch (err) {
@@ -61,12 +60,15 @@ export default function ShashaApp() {
   };
 
   useEffect(() => {
+    if (stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+    }
     return () => {
-      if (videoRef.current && videoRef.current.srcObject) {
-        (videoRef.current.srcObject as MediaStream).getTracks().forEach((track) => track.stop());
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
       }
     };
-  }, []);
+  }, [stream]);
 
   useEffect(() => {
     if (scrollAreaRef.current) {
