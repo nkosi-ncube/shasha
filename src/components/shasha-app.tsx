@@ -20,6 +20,7 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 type Message = {
   role: "user" | "ai";
   text: string;
+  audioUrl?: string;
 };
 
 export default function ShashaApp() {
@@ -123,9 +124,19 @@ export default function ShashaApp() {
         ...prev,
         {
           role: "ai",
-          text: response.response,
+          text: response.textExplanation,
+          audioUrl: response.audioExplanation,
         },
       ]);
+      const audio = new Audio(response.audioExplanation);
+      audio.play().catch(e => {
+        console.error("Error playing audio:", e)
+        toast({
+          variant: "destructive",
+          title: "Audio Error",
+          description: "Could not play audio response. Your browser might be blocking it.",
+        });
+      });
     }
 
     setIsProcessing(false);

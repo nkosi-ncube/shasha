@@ -1,6 +1,6 @@
 "use server";
 
-import { realTimeHomeworkHelp } from "@/ai/flows/real-time-homework-help";
+import { conversationalExplanations } from "@/ai/flows/conversational-explanations";
 import { z } from "zod";
 
 const helpSchema = z.object({
@@ -9,7 +9,8 @@ const helpSchema = z.object({
 });
 
 type HelpResponse = {
-  response: string;
+  textExplanation: string;
+  audioExplanation: string;
 } | { error: string };
 
 export async function getRealTimeHelp(
@@ -22,9 +23,9 @@ export async function getRealTimeHelp(
   }
 
   try {
-    const result = await realTimeHomeworkHelp({
-        photoDataUri: validatedData.data.photoDataUri,
-        query: validatedData.data.query,
+    const result = await conversationalExplanations({
+        problemImage: validatedData.data.photoDataUri,
+        studentQuestion: validatedData.data.query,
     });
     return result;
   } catch (e) {
