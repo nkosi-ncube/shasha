@@ -1,6 +1,6 @@
 "use server";
 
-import { conversationalExplanations } from "@/ai/flows/conversational-explanations";
+import { realTimeHomeworkHelp } from "@/ai/flows/real-time-homework-help";
 import { z } from "zod";
 
 const helpSchema = z.object({
@@ -23,11 +23,16 @@ export async function getRealTimeHelp(
   }
 
   try {
-    const result = await conversationalExplanations({
-        problemImage: validatedData.data.photoDataUri,
-        studentQuestion: validatedData.data.query,
+    const result = await realTimeHomeworkHelp({
+      photoDataUri: validatedData.data.photoDataUri,
+      query: validatedData.data.query,
     });
-    return result;
+    // Adapt the response to fit the client's expected structure.
+    // Audio is temporarily disabled to resolve the server error.
+    return {
+      textExplanation: result.response,
+      audioExplanation: "",
+    };
   } catch (e) {
     console.error(e);
     return { error: "An error occurred while getting help." };
